@@ -1,0 +1,118 @@
+#change brightness and color temperature with start/stop command
+
+globals:
+   - id: dimmloop_bool
+     type: boolean
+     restore_value: no
+     initial_value: "false"
+   - id: colortemploop_bool
+     type: boolean
+     restore_value: no
+     initial_value: "false"
+	 
+	 
+
+mqtt:
+
+  on_message:
+    - topic: h801_4/light/unten/command
+      then:
+        - if:
+            condition:
+              lambda: 'return x == "brightness_up";'
+            then:
+              - lambda: 'id(dimmloop_bool) = true;'
+              - logger.log: "dimmloop true"
+              - while:
+                  condition:
+                    and:
+                    - lambda: 'return id(dimmloop_bool);'
+                    - lambda: 'return id(lightdown).current_values.get_brightness() < 1.0;'
+                  then:
+                    - logger.log: "dimming_up"
+                    - light.dim_relative:
+                        id: lightdown
+                        relative_brightness: 1%
+                        transition_length: 50ms
+                    - delay: 50ms
+              - lambda: 'id(dimmloop_bool) = false;'
+              - logger.log: "dimmloop false"
+        - if:
+            condition:
+              lambda: 'return x == "brightness_down";'
+            then:
+              - lambda: 'id(dimmloop_bool) = true;'
+              - logger.log: "dimmloop true"
+              - while:
+                  condition:
+                    and:
+                    - lambda: 'return id(dimmloop_bool);'
+                    - lambda: 'return id(lightdown).current_values.get_brightness() > 0.1;'
+                  then:
+                    - logger.log: "dimming_down"
+                    - light.dim_relative:
+                        id: lightdown
+                        relative_brightness: -1%
+                        transition_length: 50ms
+                    - delay: 50ms
+              - lambda: 'id(dimmloop_bool) = false;'
+              - logger.log: "dimmloop false"
+        - if:
+            condition:
+              lambda: 'return x == "brightness_stop";'
+            then:
+              - lambda: 'id(dimmloop_bool) = false;'
+              - logger.log: "dimmloop false"
+        - if:
+            condition:
+              lambda: 'return x == "colortemp_warmer";'
+            then:
+              - logger.log: "colortemp_warmer"
+              - lambda: |-
+                    ESP_LOGI("custom", "The value is: %f", id(lightdown).current_values.get_color_temperature());
+              - lambda: 'id(colortemploop_bool) = true;'
+              - logger.log: "colortemploop true"
+              - while:
+                  condition:
+                    and:
+                    - lambda: 'return id(colortemploop_bool);'
+                    - lambda: 'return id(lightdown).current_values.get_color_temperature() < 500;'
+                  then:
+                    - logger.log: "loop warmer"
+                    - light.control:
+                        id: lightdown
+                        color_temperature: !lambda 'return id(lightdown).current_values.get_color_temperature() + 4;'
+                        transition_length: 50ms
+                    - delay: 50ms
+              - lambda: 'id(colortemploop_bool) = false;'
+              - logger.log: "colortemploop false"
+        - if:
+            condition:
+              lambda: 'return x == "colortemp_colder";'
+            then:
+              - logger.log: "colortemp_colder"
+              - lambda: |-
+                    ESP_LOGI("custom", "The value is: %f", id(lightdown).current_values.get_color_temperature());
+              - lambda: 'id(colortemploop_bool) = true;'
+              - logger.log: "colortemploop true"
+              - while:
+                  condition:
+                    and:
+                    - lambda: 'return id(colortemploop_bool);'
+                    - lambda: 'return id(lightdown).current_values.get_color_temperature() > 150;'
+                  then:
+                    - logger.log: "loop colder"
+                    - light.control:
+                        id: lightdown
+                        color_temperature: !lambda 'return id(lightdown).current_values.get_color_temperature() - 4;'
+                        transition_length: 50ms
+#                    - lambda: 'id(lightdown).current_values.set_color_temperature( id(lightdown).current_values.get_color_temperature() - 10 ) ;'
+                    - delay: 50ms
+              - lambda: 'id(colortemploop_bool) = false;'
+              - logger.log: "colortemploop false"
+        - if:
+            condition:
+              lambda: 'return x == "colortemp_stop";'
+            then:
+              - lambda: 'id(colortemploop_bool) = false;'
+              - logger.log: "colortemploop false"
