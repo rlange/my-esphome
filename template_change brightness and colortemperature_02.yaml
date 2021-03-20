@@ -1,0 +1,175 @@
+#change brightness and color temperature with start/stop command
+
+globals:
+  # for light1, "oben"
+  - id: light_oben_brightness_min  #set the minimum allowed brightness
+    type: float
+    restore_value: no
+    initial_value: '0.1'
+  - id: light_oben_brightness_max   #set the maximum allowed brightness
+    type: float
+    restore_value: no
+    initial_value: '1.0'
+  - id: light_oben_dimming_direction   #remember the current dim direction
+    type: int
+    restore_value: no
+    initial_value: '1'
+  - id: light_oben_dimming_loopstop # stop the while loop upon min/max brightness
+    type: bool
+    restore_value: no
+    initial_value: 'true'
+  - id: light_oben_colortemp_min  #set the minimum allowed color_tempearature
+    type: float
+    restore_value: no
+    initial_value: '153'
+  - id: light_oben_colortemp_max   #set the maximum allowed color_tempearature
+    type: float
+    restore_value: no
+    initial_value: '500'
+  - id: light_oben_colortemp_direction   #remember the current color_tempearature direction
+    type: int
+    restore_value: no
+    initial_value: '1'
+  - id: light_oben_colortemp_loopstop # stop the while loop upon min/max color_tempearature
+    type: bool
+    restore_value: no
+    initial_value: 'true'
+# Common setting dimmer steps
+  - id: dimming_step #dimmer steps
+    type: float
+    restore_value: no
+    initial_value: '0.01'
+# Common setting colortemperature steps
+  - id: colortemp_step #colortemperature steps
+    type: float
+    restore_value: no
+    initial_value: '4'
+
+
+mqtt:
+  broker: ${mqtt}
+
+
+  on_message:
+    - topic: h801_4/light/oben/command
+      then:
+        - if:
+            condition:
+              lambda: 'return x == "brightness_stop";'
+            then:
+              - lambda: |-
+                  id(light_oben_dimming_loopstop) = true;
+              - logger.log: "light_oben_dimming_loopstop = true"
+        - if:
+            condition:
+              lambda: 'return x == "brightness_up";'
+            then:
+              - lambda: |-
+                  id(light_oben_dimming_direction) = '1';
+                  id(light_oben_dimming_loopstop) = false;
+        - if:
+            condition:
+              lambda: 'return x == "brightness_down";'
+            then:
+              - lambda: |-
+                  id(light_oben_dimming_direction) = '0';
+                  id(light_oben_dimming_loopstop) = false;
+        - while:
+           # keep on going as long as the button is pressed and when the max/min threshold is not exceeded yet (indicated by the global var of type bool)
+            condition:
+              - lambda: |-
+                   return(!id(light_oben_dimming_loopstop));
+            then:
+              - light.dim_relative:
+                  id: light_oben
+                    # This lambda will dim up or down depending on the dim direction
+                    # if dim = up, it will keep increasing brightness with global var 'dimming_step' (so we can easily change this in a central place) as long as the button keeps being pressed until max_brightness would be exceed
+                    # if dim = down, it will keep decreasing brightness with global var 'dimming_step' (so we can easily change this in a central place) as long as the button keeps being pressed until min_brightness would be exceed
+                  relative_brightness: !lambda |-
+                      float brightness;
+                      brightness = id(light_oben).current_values.get_brightness();
+                      if (id(light_oben_dimming_direction) == '1') {
+                         if ((id(dimming_step) + brightness) <= id(light_oben_brightness_max)) { 
+                            return(id(dimming_step));
+                         }
+                         else {
+                            id(light_oben_dimming_loopstop) = true;
+                            return(id(light_oben_brightness_max)- brightness);
+                         }
+                      }
+                      else if (id(light_oben_dimming_direction) != '1') {
+                         if ((brightness - id(dimming_step)) >= id(light_oben_brightness_min)) { 
+                          return(-id(dimming_step));
+                         }
+                         else {
+                              id(light_oben_dimming_loopstop) = true;                          
+                             return(id(light_oben_brightness_min)- brightness);
+                         }  
+                      }
+                      // the else is strictly speaking not needed as the loop should break before this condition is true but if for whatever reason that would not happen at least we are returning something
+                      else {
+                        return(0);
+                      }
+                  transition_length: 50ms
+              - delay: 50ms
+              
+
+        - if:
+            condition:
+              lambda: 'return x == "colortemp_stop";'
+            then:
+              - lambda: |-
+                  id(light_oben_colortemp_loopstop) = true;
+              - logger.log: "light_oben_colortemp_loopstop = true"
+        - if:
+            condition:
+              lambda: 'return x == "colortemp_warmer";'
+            then:
+              - lambda: |-
+                  id(light_oben_colortemp_direction) = '1';
+                  id(light_oben_colortemp_loopstop) = false;
+        - if:
+            condition:
+              lambda: 'return x == "colortemp_colder";'
+            then:
+              - lambda: |-
+                  id(light_oben_colortemp_direction) = '0';
+                  id(light_oben_colortemp_loopstop) = false;
+        - while:
+           # keep on going as long as the button is pressed and when the max/min threshold is not exceeded yet (indicated by the global var of type bool)
+            condition:
+              - lambda: |-
+                   return(!id(light_oben_colortemp_loopstop));
+            then:
+              - light.control:
+                  id: light_oben
+                    # This lambda will dim up or down depending on the dim direction
+                    # if dim = up, it will keep increasing brightness with global var 'dimming_step' (so we can easily change this in a central place) as long as the button keeps being pressed until max_brightness would be exceed
+                    # if dim = down, it will keep decreasing brightness with global var 'dimming_step' (so we can easily change this in a central place) as long as the button keeps being pressed until min_brightness would be exceed
+                  color_temperature: !lambda |-
+                      float colortemp;
+                      colortemp = id(light_oben).current_values.get_color_temperature();
+                      if (id(light_oben_colortemp_direction) == '1') {
+                         if ((id(colortemp_step) + colortemp) <= id(light_oben_colortemp_max)) { 
+                            return(id(colortemp_step) + colortemp);
+                         }
+                         else {
+                           id(light_oben_colortemp_loopstop) = true;
+                           return(id(light_oben_colortemp_max));
+                         }
+                      }
+                      else if (id(light_oben_colortemp_direction) != '1') {
+                         if ((colortemp - id(colortemp_step)) >= id(light_oben_colortemp_min)) { 
+                          return(colortemp - id(colortemp_step));
+                         }
+                         else {
+                           id(light_oben_colortemp_loopstop) = true;                          
+                           return(id(light_oben_colortemp_min));
+                         }  
+                      }
+                        // the else is strictly speaking not needed as the loop should break before this condition is true but if for whatever reason that would not happen at least we are returning something
+                      else {
+                        return(0);
+                      }
+                  transition_length: 50ms
+              - delay: 50ms
